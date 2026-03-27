@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Dynamic Graph Coloring Visualizer</title>
+
+<style>
+body{
+font-family:Arial;
+text-align:center;
+background: radial-gradient(circle at center, #667eea 0%, #764ba2 50%, #f093fb 100%);
+animation: gradientShift 10s ease infinite;
+overflow: hidden;
+position: relative;
+}
+@keyframes gradientShift {
+  0%, 100% { background: radial-gradient(circle at center, #667eea 0%, #764ba2 50%, #f093fb 100%); }
+  50% { background: radial-gradient(circle at 50% 50%, #f093fb 0%, #667eea 50%, #764ba2 100%); }
+}
+
+#particles-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: -1;
+}
+
+h1{ color:#333; }
+
+#container{ display:flex; justify-content:center; margin-top:20px; }
+
+svg{
+border:2px solid rgba(255,255,255,0.3);
+background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(220,235,255,0.8) 50%, rgba(255,255,255,0.9) 100%);
+box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
+backdrop-filter: blur(10px);
+}
+
+circle{ fill:white; stroke:black; stroke-width:2; transition:0.5s; }
+
+line{ stroke:black; stroke-width:2; }
+
+button{ padding:10px 20px; font-size:18px; margin:10px; cursor:pointer; }
+
+#explanation{ margin-top:20px; font-size:20px; color:#333; width:600px; margin-left:auto; margin-right:auto; }
+
+#colors-used{ font-size:24px; color:#fff; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); margin:10px; }
+</style>
+
+</head>
+
+<body>
+<canvas id="particles-canvas"></canvas>
+
+<h1>Dynamic Graph Coloring Visualizer</h1>
+<p>Greedy coloring - adds colors dynamically up to 6 (Red, Green, Blue, Orange, Purple, Yellow)</p>
+
+<div id="container">
+<svg width="500" height="350">
+<g id="graph-content"><!-- Dynamic --></g>
+</svg>
+</div>
+
+<div id="input-section" style="margin: 20px;">
+  <label for="num-vertices">Vertices (3-10): </label>
+  <input type="number" id="num-vertices" min="3" max="10" value="4">
+  <button onclick="generateGraph()">Generate Graph</button>
+</div>
+
+<div id="colors-used">Colors Used: 0 / 6</div>
+
+<button onclick="nextStep()">Next Step</button>
+<button onclick="resetGraph()">Reset</button>
+
+<div id="explanation">Generate a graph, then Next Step for greedy coloring!</div>
+
+<script>
+let step = 0;
+let graphData = { nodes: [], edges: [] };
+let graph = [];
+let colors = ["red", "green", "blue", "orange", "purple", "yellow"]; // Max 6
+let result = [];
+let nodeElements = [];
+let currentN = 0;
+let maxColorsUsed = 0;
+
+function updateColorsDisplay() {
+  document.getElementById('colors-used').textContent = `Colors Used: ${maxColorsUsed} / 6`;
+}
+
+function generateGraph() {
+  const nInput = document.getElementById('num-vertices');
+  currentN = parseInt(nInput.value);
+  if (currentN > 10) { currentN = 10; nInput.value = '10'; alert('Max 10 vertices.'); }
+  if (currentN < 3) { alert('Min 3 vertices'); return; }
+
+  const centerX = 250, centerY = 175, radius = 140;
+  graphData.nodes = [];
+  for (let i = 0; i < currentN; i++) {
+    const angle = (i / currentN) * 2 * Math.PI;
+    graphData.nodes.push({
+      id: i, 
+      x: centerX + radius * Math.cos(angle),
+      y: centerY + radius * Math.sin(angle),
+      label: i.toString()
+    });
+  }
+
+  graphData.edges = [];
+  if (currentN === 3) {
+    graphData.edges = [{from:0,to:1},{from:1,to:2},{from:2,to:0}]; // K3 needs 3 colors
+  } else {
+    for (let i = 0; i < currentN; i++) {
+      graphData.edges.push({from: i, to: (i+1)%currentN});
+    }
+  }
+
+  step = 0;
+  result = new Array(currentN).fill(-1);
+  nodeElements = new Array(currentN);
+  maxColorsUsed = 0;
+  updateColorsDisplay();
+  
+  initGraph();
+  explain(`${currentN} vertices generated (${currentN===3?'K3 Triangle':'Cycle C'+currentN}). Greedy coloring starts!`);
+}
+
+function initGraph() {
+  const content = document.getElementById('graph-content');
+  content.innerHTML = '';
+  
+  const n = graphData.nodes.length;
+  graph = Array(n).fill().map(() => Array(n).fill(0));
+  
+  graphData.edges.forEach(edge => {
+    graph[edge.from][edge.to] = 1;
+    graph[edge.to][edge.from] = 1;
+  });
+  
+  // Edges first
+  graphData.edges.forEach(edge => {
+    const from = graphData.nodes[edge.from], to = graphData.nodes[edge.to];
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', from.x); line.setAttribute('y1', from.y);
+    line.setAttribute('x2', to.x); line.setAttribute('y2', to.y);
+    line.setAttribute('stroke', 'black'); line.setAttribute('stroke-width', '2');
+    content.appendChild(line);
+  });
+  
+  // Nodes
+  graphData.nodes.forEach(node => {
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('id', `v${node.id}`);
+    circle.setAttribute('cx', node.x); circle.setAttribute('cy', node.y);
+    circle.setAttribute('r', '30'); circle.setAttribute('fill', 'white');
+    circle.setAttribute('stroke', 'black'); circle.setAttribute('stroke-width', '2');
+    content.appendChild(circle);
+    nodeElements[node.id] = circle;
+    
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', node.x - 5); text.setAttribute('y', node.y + 5);
+    text.setAttribute('font-size', '16'); text.setAttribute('fill', 'black');
+    text.textContent = node.label;
+    content.appendChild(text);
+  });
+  
+  readVertices();
+}
+
+window.addEventListener('load', generateGraph);
+
+let particles = [];
+const canvas = document.getElementById('particles-canvas');
+const ctx = canvas ? canvas.getContext('2d') : null;
+
+function initParticles() {
+  if (!ctx || !canvas) return;
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  particles = [];
+  for (let i = 0; i < 100; i++) {
+    particles.push({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      vx: (Math.random() - 0.5) * 0.5,
+      vy: (Math.random() - 0.5) * 0.5,
+      radius: Math.random() * 2 + 1,
+      opacity: Math.random() * 0.5 + 0.2
+    });
+  }
+  animateParticles();
+}
+
+function animateParticles() {
+  if (!ctx || !canvas) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  particles.forEach(p => {
+    p.x += p.vx; p.y += p.vy;
+    if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
+    if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 255, 255, ${p.opacity})`;
+    ctx.fill();
+  });
+  requestAnimationFrame(animateParticles);
+}
+
+if (canvas) {
+  initParticles();
+  window.addEventListener('resize', () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    initParticles();
+  });
+}
+
+function nextStep() {
+  if (step >= currentN) {
+    explain(`Coloring complete! Chromatic number <= ${maxColorsUsed} (greedy upper bound).`);
+    return;
+  }
+
+  let used = new Array(colors.length).fill(false);
+  for (let i = 0; i < currentN; i++) {
+    if (graph[step][i] === 1 && result[i] !== -1) {
+      used[result[i]] = true;
+    }
+  }
+
+  let color = findColor(used);
+  result[step] = color;
+  colorNode(step, colors[color]);
+  if (color + 1 > maxColorsUsed) maxColorsUsed = color + 1;
+  updateColorsDisplay();
+
+  const adjColors = used.map((u, c) => u ? colors[c].toUpperCase() : 'none').join(', ');
+  explain(`V${step} → ${colors[color].toUpperCase()}. Adjacent: [${adjColors}] (Colors: ${maxColorsUsed})`);
+
+  step++;
+}
+
+function findColor(used) {
+  for (let i = 0; i < colors.length; i++) {
+    if (!used[i]) return i;
+  }
+  // Dynamic add? But fixed max 6 - if reached 6 and fail, error (rare for n<=10)
+  if (colors.length < 6) {
+    // Actually fixed to 6, always available
+    return colors.length - 1; // Last one always works in greedy for simple graphs
+  }
+  explain('Max 6 colors reached!');
+  return 0; // Fallback
+}
+
+function colorNode(v, color) {
+  if (nodeElements[v]) nodeElements[v].style.fill = color;
+}
+
+function readVertices() {
+  console.log('Graph ready:', currentN, 'vertices,', graphData.edges.length, 'edges');
+  graphData.nodes.forEach(n => console.log(`V${n.id}: (${n.x.toFixed(0)}, ${n.y.toFixed(0)})`));
+}
+
+function explain(text) {
+  document.getElementById("explanation").innerHTML = text;
+}
+
+function resetGraph() {
+  step = 0;
+  result = new Array(currentN).fill(-1);
+  maxColorsUsed = 0;
+  updateColorsDisplay();
+  for (let i = 0; i < currentN; i++) {
+    if (nodeElements[i]) nodeElements[i].style.fill = "white";
+  }
+  explain("Reset. Next Step to re-color.");
+}
+</script>
+
+</body>
+</html>
